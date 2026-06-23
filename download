@@ -1,0 +1,15 @@
+import { createClient } from '@supabase/supabase-js';
+
+// Publishable key — safe to ship in client code. Your data is protected by
+// Row Level Security (set up in Supabase) plus the scorekeeper passphrase in the app.
+// NEVER put the secret key (sb_secret_...) here.
+const SUPABASE_URL = 'https://wlgugnnltqxiimsqesfy.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_Vb8emzfwViFXEKRU71mClQ_jo64rcqn';
+
+export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
+  realtime: { params: { eventsPerSecond: 5 } },
+});
+export const KV_TABLE = 'shared_kv';
+
+// Scorekeeper passphrase — anyone who knows it can enter official results.
+export const SCOREKEEPER_PASS = 'World Cup';

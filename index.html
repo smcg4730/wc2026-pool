@@ -1,0 +1,49 @@
+// Storage layer for the pool tracker.
+//   shared === true  -> Supabase (cloud, synced to everyone, realtime)  : official results
+//   shared === false -> browser localStorage (private to this device)   : your what-ifs
+import { supabase, KV_TABLE } from './supabaseClient.js';
+
+// ---------- private (per-device) ----------
+const lGet = (key) => { try { const v = localStorage.getItem('wc:local:' + key); return v == null ? null : { key, value: v, shared: false }; } catch { return null; } };
+const lSet = (key, value) => { try { localStorage.setItem('wc:local:' + key, String(value)); return { key, value, shared: false }; } catch { return null; } };
+const lDel = (key) => { try { localStorage.removeItem('wc:local:' + key); return { key, deleted: true, shared: false }; } catch { return null; } };
+
+// ---------- shared (cloud) ----------
+async function sGet(key) {
+  const { data, error } = await supabase.from(KV_TABLE).select('value').eq('key', key).maybeSingle();
+  if (error || !data) return null;
+  return { key, value: JSON.stringify(data.value), shared: true };
+}
+async function sSet(key, value) {
+  let obj; try { obj = JSON.parse(value); } catch { obj = value; }
+  const { error } = await supabase.from(KV_TABLE)
+    .upsert({ key, value: obj, updated_at: new Date().toISOString() }, { onConflict: 'key' });
+  return error ? null : { key, value, shared: true };
+}
+async function sDel(key) {
+  const { error } = await supabase.from(KV_TABLE).delete().eq('key', key);
+  return error ? null : { key, deleted: true, shared: true };
+}
+
+const api = {
+  async get(key, shared = false) { return shared ? sGet(key) : lGet(key); },
+  async set(key, value, shared = false) { return shared ? sSet(key, value) : lSet(key, value); },
+  async delete(key, shared = false) { return shared ? sDel(key) : lDel(key); },
+
+  // Realtime: cb(valueString | null) fires whenever the shared row for `key` changes on the server.
+  subscribeShared(key, cb) {
+    const ch = supabase
+      .channel('kv_' + key)
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: KV_TABLE, filter: 'key=eq.' + key },
+        (payload) => {
+          const row = payload && payload.new && Object.keys(payload.new).length ? payload.new : null;
+          cb(row ? JSON.stringify(row.value) : null);
+        })
+      .subscribe();
+    return () => { try { supabase.removeChannel(ch); } catch {} };
+  },
+};
+
+if (typeof window !== 'undefined') window.storage = api;
+export default api;
